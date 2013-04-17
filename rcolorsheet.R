@@ -2,7 +2,7 @@ library(RColorBrewer)
 library(colorRamps)
 
 
-pdf("mycolorsheet.pdf", paper="a4r", width=11.6, height=8.2, onefile=TRUE)
+pdf("rcolorsheet.pdf", paper="a4r", width=11.6, height=8.2, onefile=TRUE)
 
 ### page 1
 
