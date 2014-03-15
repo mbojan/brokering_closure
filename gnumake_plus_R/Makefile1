@@ -7,4 +7,4 @@ script.R:
 	echo "library(absentPackage)" > $@
 
 %.Rout: %.R
-	R CMD BATCH $<
+	R CMD BATCH --no-save --no-restore $<
