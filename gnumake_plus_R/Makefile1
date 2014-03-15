@@ -1,0 +1,10 @@
+.PHONY: default
+default: script.Rout
+
+
+# faulty R script
+script.R:
+	echo "library(absentPackage)" > $@
+
+%.Rout: %.R
+	R CMD BATCH $<
