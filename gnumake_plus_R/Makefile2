@@ -13,7 +13,7 @@ cleaning.R:
 	echo "x <- rnorm(100); save(x, file='cleaned_data.rda')" > $@
 
 figure.R:
-	echo "pdf('figure.pdf'); plot(density(x)); dev.off()" > $@
+	echo "load('cleaned_data.rda'); pdf('figure.pdf'); plot(density(x)); dev.off()" > $@
 
 cleaned_data.rda: cleaning.R raw_data.dat
 	$(run-R)
