@@ -1,0 +1,23 @@
+.PHONY: default
+default: figure.pdf
+
+# Processing R scripts
+define run-R
+R CMD BATCH --no-save --no-restore $<
+endef
+
+raw_data.dat:
+	touch $@
+
+cleaning.R:
+	echo "x <- rnorm(100); save(x, file='cleaned_data.rda')" > $@
+
+figure.R:
+	echo "pdf('figure.pdf'); plot(density(x)); dev.off()" > $@
+
+cleaned_data.rda: cleaning.R raw_data.dat
+	$(run-R)
+
+figure.pdf: figure.R cleaned_data.rda
+	$(run-R)
+
