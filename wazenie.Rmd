@@ -1,0 +1,101 @@
+# Weighting `lm`s
+
+In data analysis it happens sometimes that it is neccesary to use *weights*. Contexts
+that come to mind include:
+
+- Analysis of data from complex surveys, e.g. stratified samples. Sample inclusion probabilities might have been unequal and thus observations from different strata should have different weights.
+- Application of propensity score weighting e.g. to correct for data being Missing At Random (MAR).
+- Inverse-variance weighting (https://en.wikipedia.org/wiki/Inverse-variance_weighting) when different observations have been measured with different precision which is known apriori.
+- We are analyzing data in an aggregated form such that the weight variable encodes how many original observations each row in the aggregated data represents.
+
+I believe that the way the weights should be incorporated in the analysis is common to some of these contexts (citation?).
+
+If you use SPSS you probably know about the possibility to define one of the variables as weights. This information is used when producing cross-tabulations (cells include sums of weights), regression models and so on. SPSS weights are *replication weights* in the sense that $w_i$ is the number of observations particular case $i$ represents.
+
+On the other hand, in R `lm` and `glm` functions have `weights` argument that serves a related purpose.
+
+
+
+```{r}
+library(dplyr)
+
+set.seed(666)
+N <- 30
+
+individuals <- data.frame(x = sample(1:5, N, replace=TRUE) ) %>%
+  mutate( y = round(2 * x + 2 + rnorm(N)) )
+
+aggregated <- individuals %>% group_by(x, y) %>% summarise(freq=n()) %>% 
+  ungroup() %>% mutate( w = freq )
+
+sum(aggregated$w)
+```
+
+Let's fit some models:
+
+```{r}
+library(survey)
+design <- svydesign( ~ 1, weights=~w, data=aggregated)
+
+models <- list( 
+               raw_agg = lm( y ~ x, data=aggregated),
+               ind_lm = lm(y ~ x, data=individuals),
+               ind_glm = glm(y ~ x, family=gaussian(), data=individuals),
+               wei_lm = lm(y ~ x, data=aggregated, weight=w),
+               wei_glm = glm(y ~ x, data=aggregated, family=gaussian(), weight=w),
+               svy_glm = svyglm(y ~ x, design=design, family=gaussian())
+               )
+```
+
+Effects are identical:
+
+```{r}
+sapply(models, coef)
+```
+
+
+Inference (i.e. SEs) not
+
+```{r}
+# SEs
+sapply(models, function(mod) coef(summary(mod))[,"Std. Error"])
+
+```
+
+
+
+fix degrees of freedom
+http://stackoverflow.com/questions/10268689/weighted-regression-in-r
+
+
+```{r}
+models$fixmod <- models$wei_lm
+models$fixmod$df.residual <- with(models$fixmod, sum(weights) - 2)
+
+sapply(models, function(mod) coef(summary(mod))[,"Std. Error"])
+sapply(models, function(mod) coef(summary(mod))[,4])
+```
+
+Seems fine now
+
+
+---
+
+
+```{r, w1}
+w1 <- with(aggregated, freq / sum(freq) * nrow(aggregated) )
+
+design <- svydesign( ~ 1, weights=~w1, data=aggregated)
+
+models1 <- list( 
+               wei_lm = lm(y ~ x, data=aggregated, weight=w1),
+               svy_glm = svyglm(y ~ x, design=design, family=gaussian())
+               )
+
+models1$fixmod <- models1$wei_lm
+models1$fixmod$df.residual <- with(models1$fixmod, sum(weights) - 2)
+
+sapply(models1, coef)
+sapply(models1, function(mod) coef(summary(mod))[,"Std. Error"])
+sapply(models1, function(mod) coef(summary(mod))[,4])
+```
