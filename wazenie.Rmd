@@ -1,103 +1,196 @@
-# Weighting `lm`s
+---
+title: Linear models with weighted observations
+output:
+  html_document:
+    highlight: pygments
+    number_sections: false
+    standalone: false
+---
 
 In data analysis it happens sometimes that it is neccesary to use *weights*. Contexts
 that come to mind include:
 
 - Analysis of data from complex surveys, e.g. stratified samples. Sample inclusion probabilities might have been unequal and thus observations from different strata should have different weights.
-- Application of propensity score weighting e.g. to correct for data being Missing At Random (MAR).
+- Application of propensity score weighting e.g. to correct data being Missing At Random (MAR).
 - Inverse-variance weighting (https://en.wikipedia.org/wiki/Inverse-variance_weighting) when different observations have been measured with different precision which is known apriori.
 - We are analyzing data in an aggregated form such that the weight variable encodes how many original observations each row in the aggregated data represents.
+- We are given survey data with post-stratification weights.
 
-I believe that the way the weights should be incorporated in the analysis is common to some of these contexts (citation?).
 
-If you use SPSS you probably know about the possibility to define one of the variables as weights. This information is used when producing cross-tabulations (cells include sums of weights), regression models and so on. SPSS weights are *replication weights* in the sense that $w_i$ is the number of observations particular case $i$ represents.
+If you use, or have been using, SPSS you probably know about the possibility to define one of the variables as weights. This information is used when producing cross-tabulations (cells include sums of weights), regression models and so on. SPSS weights are *frequency weights* in the sense that $w_i$ is the number of observations particular case $i$ represents.
 
 On the other hand, in R `lm` and `glm` functions have `weights` argument that serves a related purpose.
 
+```{r packages}
+suppressMessages(local({
+  library(dplyr)
+  library(ggplot2)
+  library(survey)
+  library(knitr)
+  library(tidyr)
+  library(broom)
+}))
+```
 
 
-```{r}
-library(dplyr)
+Let's compare different ways in which a linear model can be fitted to data with weights. We start by generating some artificial data:
 
+```{r data}
 set.seed(666)
-N <- 30
 
-individuals <- data.frame(x = sample(1:5, N, replace=TRUE) ) %>%
-  mutate( y = round(2 * x + 2 + rnorm(N)) )
+N <- 30 # number of observations
 
-aggregated <- individuals %>% group_by(x, y) %>% summarise(freq=n()) %>% 
-  ungroup() %>% mutate( w = freq )
+# Aggregated data
+aggregated <- data.frame(x=1:5) %>%
+  mutate( y = round(2 * x + 2 + rnorm(length(x)) ),
+          freq = as.numeric(table(sample(1:5, N, replace=TRUE, prob=c(.3, .4, .5, .4, .3))))
+          )
+aggregated
 
-sum(aggregated$w)
+# Disaggregated data
+individuals <- aggregated[ rep(1:5, aggregated$freq) , c("x", "y") ]
+```
+
+Visually:
+
+```{r data_plot}
+ggplot(aggregated, aes(x=x, y=y, size=freq)) + geom_point() + theme_bw()
 ```
 
 Let's fit some models:
 
-```{r}
-library(survey)
+```{r models}
 
 models <- list( 
                ind_lm = lm(y ~ x, data=individuals),
+               raw_agg = lm( y ~ x, data=aggregated),
                ind_svy_glm = svyglm(y~x, design=svydesign(id=~1, data=individuals),
                                  family=gaussian() ),
                ind_glm = glm(y ~ x, family=gaussian(), data=individuals),
-               raw_agg = lm( y ~ x, data=aggregated),
-               wei_lm = lm(y ~ x, data=aggregated, weight=w),
-               wei_glm = glm(y ~ x, data=aggregated, family=gaussian(), weight=w),
-               svy_glm = svyglm(y ~ x, design=svydesign(id=~1, weights=~w, data=aggregated),
-                                family=gaussian()),
+               wei_lm = lm(y ~ x, data=aggregated, weight=freq),
+               wei_glm = glm(y ~ x, data=aggregated, family=gaussian(), weight=freq),
+               svy_glm = svyglm(y ~ x, design=svydesign(id=~1, weights=~freq, data=aggregated),
+                                family=gaussian())
                )
 ```
 
-Effects are identical:
+In short, we have the following linear models:
+
+- `ind_lm` is a OLS fit to individual data (the *true* model).
+- `ind_agg` is a OLS fit to aggregated data (definitely wrong).
+- `ind_glm` is a ML fit to individual data
+- `ind_svy_glm` is a ML fit to individual data using simple random sampling with replacement design.
+- `wei_lm` is OLS fit to aggregated data with frequencies as weights
+- `wei_glm` is a ML fit  to aggregated data with frequencies as weights
+- `svy_glm` is a ML fit to aggregated using "survey" package and using frequencies as weights in the sampling design.
+
+We would expect that models `ind_lm`, `ind_glm`, and `ind_svy_glm` will be identical.
+
+Summarise and gather in long format
+
+```{r, mysummary}
+results <- do.call("rbind", lapply( names(models), function(n) cbind(model=n, tidy(models[[n]])) )) %>%
+                                      gather(stat, value, -model, -term)
+```
+
+Check if point estimates of model coefficients are identical:
+
+```{r coefs}
+results %>% filter(stat=="estimate") %>% 
+  select(model, term, value) %>%
+  spread(term, value)
+```
+
+Apart from the "wrong" `raw_agg` model, the coefficients are identical across models.
+
+Let's check the inference:
+
+```{r inference}
+# Standard Errors
+results %>% filter(stat=="std.error") %>%
+  select(model, term, value) %>%
+  spread(term, value)
+
+# p-values
+results %>% filter(stat=="p.value") %>%
+  mutate(p=format.pval(value)) %>%
+  select(model, term, p) %>%
+  spread(term, p)
+```
+
+Recall, that the correct model is `ind_lm`. Observations:
+
+- `raw_agg` is clearly wrong, as expected.
+- Should the `weight` argument to `lm` and `glm` implement frequency weights, the results for `wei_lm` and `wei_glm` will be identical to that from `ind_lm`. Only the point estimates are correct, all the inference stats are not correct.
+- The model using design with sampling weights `svy_glm` gives correct point estimates, but incorrect inference.
+- Suprisingly, the model fit with "survey" package to the individual data using simple random sampling design (`ind_svy_glm`) does not give identical inference stats to those from `ind_lm`. They are close though.
+
+Functions weights `lm` and `glm` implement *precision weights*: inverse-variance weights that can be used to model differential precision with which the outcome variable was estimated.
+
+Functions in the "survey" package implement *sampling weights*: inverse of the probability of particular observation to be selected from the population to the sample.
+
+Frequency weights are a different animal.
+
+
+
+However, it is possible get correct inference statistics for the model fitted to aggregated data using `lm` with frequency weights supplied as `weights`. What needs correcting is the degrees of freedom (see also http://stackoverflow.com/questions/10268689/weighted-regression-in-r).
+
 
 ```{r}
-sapply(models, coef)
+models$wei_lm_fixed <- models$wei_lm
+models$wei_lm_fixed$df.residual <- with(models$wei_lm_fixed, sum(weights) - length(coefficients))
+  
+results <- do.call("rbind", lapply( names(models), function(n) cbind(model=n, tidy(models[[n]])) )) %>%
+                                      gather(stat, value, -model, -term)
+
+# Coefficients
+results %>% filter(stat=="estimate") %>% 
+  select(model, term, value) %>%
+  spread(term, value)
+
+# Standard Errors
+results %>% filter(stat=="std.error") %>%
+  select(model, term, value) %>%
+  spread(term, value)
 ```
 
 
-Inference (i.e. SEs) not
+See model `wei_lm_fixed`. Thus, correcting the degrees of freedom manually gives correct coefficient estimates as well as inference statistics.
 
-```{r}
-# SEs
-sapply(models, function(mod) coef(summary(mod))[,"Std. Error"])
 
+
+
+# Performance
+
+Aggregating data and using frequency weights can save you quite some time. To illustrate it, let's generate large data set in a disaggregated and aggregated form.
+
+```{r big_data}
+N <- 10^4 # number of observations
+
+# Aggregated data
+big_aggregated <- data.frame(x=1:5) %>%
+  mutate( y = round(2 * x + 2 + rnorm(length(x)) ),
+          freq = as.numeric(table(sample(1:5, N, replace=TRUE, prob=c(.3, .4, .5, .4, .3))))
+          )
+
+# Disaggregated data
+big_individuals <- aggregated[ rep(1:5, big_aggregated$freq) , c("x", "y") ]
 ```
 
+... and fit `lm` models weighting the model on aggregated data. Benchmarking:
 
+```{r benchmark}
+library(microbenchmark)
 
-fix degrees of freedom
-http://stackoverflow.com/questions/10268689/weighted-regression-in-r
+speed <- microbenchmark(
+  big_individual = lm(y ~ x, data=big_individuals),
+  big_aggregated = lm(y ~ x, data=big_aggregated, weights=freq)
+)
 
-
-```{r}
-models$fixmod <- models$wei_lm
-models$fixmod$df.residual <- with(models$fixmod, sum(weights) - 2)
-
-sapply(models, function(mod) coef(summary(mod))[,"Std. Error"])
-sapply(models, function(mod) coef(summary(mod))[,4])
+speed %>% group_by(expr) %>% summarise(median=median(time / 1000)) %>%
+  mutate( ratio = median / median[1])
 ```
 
-Seems fine now
+So quite an improvement.
 
-
----
-
-
-```{r, w1}
-w1 <- with(aggregated, freq / sum(freq) * nrow(aggregated) )
-
-design <- svydesign( ~ 1, weights=~w1, data=aggregated)
-
-models1 <- list( 
-               wei_lm = lm(y ~ x, data=aggregated, weight=w1),
-               svy_glm = svyglm(y ~ x, design=design, family=gaussian())
-               )
-
-models1$fixmod <- models1$wei_lm
-models1$fixmod$df.residual <- with(models1$fixmod, sum(weights) - 2)
-
-sapply(models1, coef)
-sapply(models1, function(mod) coef(summary(mod))[,"Std. Error"])
-sapply(models1, function(mod) coef(summary(mod))[,4])
-```
+The improvement is probably the bigger, the more we are able to aggregate the data.
