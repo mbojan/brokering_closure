@@ -1,0 +1,135 @@
+---
+title: "Error handling"
+output: 
+  html_document:
+    toc: true
+    highlight: pygment
+    number_sections: true
+---
+
+
+---
+
+```{r setup, cache=FALSE}
+library(xml2)
+library(knitr)
+
+opts_chunk$set( error=TRUE )
+```
+
+
+# Code from win-vector blog
+
+```{r eval=FALSE}
+# argument x: item to take logarithm of
+# argument warning: warning handler
+# argument error: error handler
+# invokeRestart("flipArg"): re-runs function on -x if x 
+#    (appropriate fix for negative numeric arguments)
+# invokeRestart("zapOutArg"): re-runs function on x=1 
+#    (appropriate fix for non-numeric arguments)
+expensiveBigLibraryFunction <- function(x,
+                                        warning=function(w) {
+                                          print(paste('warning:',w)); 
+                                          browser()},
+                                        error=function(e) {
+                                          print(paste('e:',e)); 
+                                          browser()}
+) 
+{
+  print(paste("big expensive step we don't want to repeat for x:",x))
+  z <- x  # the "expensive operation" 
+  # (not really, just standing in for computation)
+  repeat 
+    withRestarts(
+      withRestarts(
+        tryCatch(   # you could call withCallingHandlers 
+          # with identical arguments here, too
+          {
+            print(paste("attempt cheap operation for z:",z))
+            return(log(z))
+          },
+          warning = warning,
+          error = error ),
+        flipArg = function() {z <<- -z} ),
+      zapOutArg = function() {z <<- 1} )
+}
+```
+
+And now:
+
+```{r, eval=FALSE}
+expensiveBigLibraryFunction(1)
+
+expensiveBigLibraryFunction(-10)
+computeRestarts()
+invokeRestart("flipArg")
+
+```
+
+# Restarts
+
+
+Let's assume some timeconsuming operation like downloading/harvesting large files (text, HTML, XML). And extracting interesting pieces. For example
+
+```{r inputs}
+inputs <- c(
+  "<p>Some paragraph with <b>text in bold</b> which should be OK</p>",
+  "<p>Some paragraph with <b>also in bold</b> with a special character \u0019</p>"
+)
+```
+
+
+
+```{r}
+operation <- function(x) {
+  xml <- xml2::read_xml(x)
+  txt <- xml_text( xml_find_one(xml, "//b") )
+  cat(txt, "\n")
+}
+```
+
+```{r}
+for( i in inputs) {
+  operation(i)
+}
+```
+
+```{r}
+fixit <- function(x) {
+  gsub("\u0019", "", x, perl=TRUE)
+}
+
+operation(inputs[2])
+operation( fixit(inputs[2]))
+```
+
+
+```{r}
+for( i in inputs ) {
+  ch <- i
+  repeat {
+    withRestarts(
+      tryCatch(
+        return(operation(ch)),
+        error = function(er) {
+          cat("ERROR: invoking 'r'\n")
+          invokeRestart("r")
+        }
+      ),
+      r = function() {
+        ch <<- gsub("\u0019", "", ch, perl=TRUE)
+      }
+    )
+  }
+}
+```
+
+
+
+
+
+# Sources
+
+- Hadley's http://adv-r.had.co.nz/Exceptions-Debugging.html
+- http://www.win-vector.com/blog/2012/10/error-handling-in-r
