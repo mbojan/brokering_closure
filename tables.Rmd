@@ -1,0 +1,25 @@
+---
+title: "Tables and exporting"
+author: "Michał Bojanowski"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(
+  echo = TRUE
+  )
+```
+
+# Packages
+
+- knitLatex
+
+# Functions
+
+- `Hmisc::latex`
+- `quantreg::latex`
+- `xtable::toLatex`
+- `papeR::toLatex`
+- `utils::toLatex`
+- `psych::df2latex`
+
