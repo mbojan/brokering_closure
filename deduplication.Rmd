@@ -1,0 +1,75 @@
+---
+title: "Deduplication workflow"
+author: "Michał Bojanowski"
+date: "May 18, 2016"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+library(dplyr)
+library(RPostgres)
+
+knitr::opts_chunk$set(
+  echo = TRUE
+  )
+```
+
+# Goal
+
+Come up with a workflow for smie-automated data deduplication.
+
+Input:
+
+- Data frame that needs deduplication.
+
+Output:
+
+- Deduplicated dataset
+
+
+
+
+# Data for testing purposes
+
+Small subset of bibliographical data from PBN:
+
+```{r pbn, cache=TRUE}
+machine <- Sys.info()["nodename"]
+if( machine == "starfish") {
+  pbn <- src_postgres("pbn")
+} else {
+  pbn <- src_postgres("pbn", host="127.0.0.1", port="15432", 
+                      user="mbojan")
+}
+
+set.seed(123)
+
+# Works
+pbn %>% tbl("final_work") %>% summarise(n=n()) %>%
+  collect() %>% as.numeric() -> n_works
+i <- sample(n_works, 100)
+pbn %>% tbl("final_work") %>% 
+  filter( row_number(id_work) %in% i ) %>%
+  select(id_work, dtype, original_title) -> works
+
+# Contributions
+works %>%
+  left_join(tbl(pbn, "final_contribution"), by=c("id_work"="fk_work")) %>%
+  select(id_contribution, fk_work, given_names, family_name) -> contributions
+
+# 
+
+# Get it
+works <- collect(works)
+contributions <- collect(contributions)
+```
+
+We have data on publications and authors from PBN stored with two tables:
+
+- `works` is a table with publications (`r paste(names(works), collapse=", ")`)
+- `contributions` is a table with "authorships" with ID of work and names of authors
+  (`r paste(names(contributions), sep=", ")`).
+
+
+
+
