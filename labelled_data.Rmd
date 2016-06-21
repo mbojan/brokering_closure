@@ -1,0 +1,200 @@
+---
+title: "Data metadata"
+output: 
+  html_document:
+    highlight: pygments
+    toc: yes
+---
+
+```{r setup, include=FALSE}
+library(sjmisc)
+
+set.seed(0)
+```
+
+
+# Packages
+
+Packages/functions importing data with metadata
+
+- haven
+- `foreign::read.spss`
+
+Packages handling data metadata
+
+- sjmisc
+- labelled
+
+
+
+# Types of metadata
+
+Types and examples of data metadata:
+
+- Dataset-level
+    + Description
+- Variable-level
+    + Variable label: textual label of a variable.
+    + Unit: units in which the variable is measured
+- Variable value-level
+    + Value labels: textual labels of individual values.
+    + Special codes (or "missing data"): variable values which have some special meaning.
+
+
+# Design goals:
+
+Loose:
+
+- Should support all basic types: numeric, logical, character.
+- Converting to factors (as in sjmisc)
+- Converting from factors (as in sjmisc)
+
+
+
+# Syntax musings
+
+Variable labels. Like in sjmisc:
+
+```{r eval=FALSE}
+x <- 1:5
+
+y <- set_label(x, "This is a label")
+set_label(x) <- "This is a label"
+
+new_df <- set_label()
+set_label(df) <- "This is a label applied to all columns of df"
+```
+
+
+
+
+
+# Generic setting/getting attributes
+
+```{r}
+set_varlevel <- function(x, ...) UseMethod("set_varlevel")
+
+set_varlevel.default <- function(x, value, attr.name) {
+  stopifnot(is.atomic(x))
+  attr(x, attr.name) <- value
+  x
+}
+
+set_varlevel.data.frame <- function(x, value, attr.name) {
+  len <- length(value)
+  if( len == 1) {
+    # Same value for all
+    rval <- lapply(x, function(v) {
+      attr(v, attr.name) <- value
+      v
+    } )
+    return(rval)
+  } else {
+    # Values must be supplied for all
+    stopifnot( len == ncol(x) )
+    for( i in seq(along=names(x)) ) {
+      attr(x[[i]], attr.name) <- value[i]
+    }
+    return(x)
+  }
+}
+```
+
+
+
+
+
+
+
+
+
+
+# Artificial data
+
+```{r data}
+N <- 20
+d <- data.frame(
+  num = sample(1:4, N, replace=TRUE),
+  ch = letters[sample(1:4, N, replace=TRUE)],
+  lg = as.logical(sample(0:1, N, replace=TRUE))
+)
+d
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+# Setting labels
+
+Function `set_label` sets "variable label", function `set_labels` sets "value labels".
+
+## Individual vectors
+
+Numeric vector
+
+```{r numeric_vector}
+x <- d$num
+set_label(x) <- "This is variable label"
+set_labels(x) <- c("jeden"=1)
+x
+```
+
+Character vector
+
+```{r character_vector}
+x <- d$ch
+set_label(x) <- "This is variable label"
+set_labels(x) <- c("aaaa"="a")
+x
+```
+
+Logical vector
+
+```{r logical_vector}
+x <- d$lg
+set_label(x) <- "This is variable label"
+set_labels(x) <- c("no"=FALSE)
+x
+```
+
+
+## Data frames
+
+Adding multiple variable labels in a single step
+
+```{r data_frame}
+set_label(d) <- c("Numeryczny", "tekstowy", "logiczny")
+str(d)
+```
+
+Getting labels
+
+```{r}
+get_label(d)
+```
+
+
+
+
+# Missing values
+
+... and other types of special codes
+
+
+```{r}
+x <- c(1,2,3,4,3,2,1)
+set_label(x) <- "Some numeric vector"
+set_labels(x) <- c("one"=1, "two"=2, "three"=3, "four"=4)
+x
+set_na(x, c(2,4), as.attr = TRUE)
+```
+
