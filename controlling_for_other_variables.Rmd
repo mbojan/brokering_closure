@@ -1,0 +1,177 @@
+---
+title: "Controlling for other variables"
+author: "Michał Bojanowski"
+date: "July 22, 2016"
+output: 
+  html_document:
+    toc: yes
+    number_sections: yes
+---
+
+
+---
+
+```{r setup, include=FALSE}
+library(dplyr)
+library(broom)
+library(tidyr)
+library(knitr)
+library(igraph)
+
+knitr::opts_chunk$set(
+  echo = TRUE
+  )
+
+set.seed(0)
+```
+
+
+```{r functions, include=FALSE}
+scale.data.frame <- function(x, ...) {
+  num <- sapply(x, is.numeric)
+  rval <- x
+  rval[num] <- as.data.frame(scale(as.matrix(x[num])))
+  rval
+}
+```
+
+
+- What does it mean to "control for other variables" in multivariate analysis?
+- Co oznacza stwierdzenie, że "efekt zmiennej $X$ jest, *ceteris paribus* równy $\beta_x$"?
+
+Poniżej ilustracje, dla zmiennych ciągłych i dyskretnych.
+
+
+
+
+
+
+
+
+
+
+# Reality
+
+We might think of variables connected causally in the following way:
+
+```{r causal_graph}
+library(igraph)
+g <- make_graph( 
+  ~ x1:x2:x3:x4 --+ y,
+  x2 --+ x3,
+  x1 +---+ x2
+)
+E(g)$causal <- TRUE
+E(g)[ 1 %--% 2 ]$causal <- FALSE
+ox <- c(1, 1, 2, 1, 3)
+oy <- c(4, 3, 2, 1, 2.5)
+l <- layout_with_fr(g, minx=ox, maxx=ox, miny=oy, maxy=oy)
+plot(g, layout=l,
+     vertex.color="white",
+     vertex.label.color="black",
+     edge.curved = replace(rep(0, ecount(g)),
+                           which(!E(g)$causal), c(-0.7, 0.7)),
+     edge.color="black")
+detach(package:igraph)
+```
+
+- All variables cause $y$
+- Variable x2 also causes x3
+- Variables x1 and x2 might be correlated due to common causes that do not interest us
+- Variable x4 is *not* correlated with x1, x2, and x3.
+
+
+```{r data}
+n <- 100
+mu <- rep(0, 2)
+s <- matrix( c(
+    1, 0.2, 
+    0.2, 1
+  ), ncol=2, byrow=TRUE)
+# diag(s) <- diag(s)
+
+MASS::mvrnorm(n, mu = mu, Sigma=s) %>%
+  as_data_frame() %>%
+  rename(
+    x1 = V1,
+    x2 = V2
+  ) %>%
+  mutate(
+    x3 = 1.2*x2 + 3 + rnorm(n, 0, 8),
+    x4 = rnorm(n),
+    y = -3 + x1 + 2*x2 + 3*x3 + 4*x4 + rnorm(n, 0, 20)
+  )  -> d
+```
+
+In data this might look as a dataset with `r ncol(d)` columns for variables: 
+`r paste(names(d), collapse=", ")` measured on `r nrow(d)` subjects.
+Few first rows of such dataset might look like this:
+
+```{r}
+d %>% head() %>% kable()
+```
+
+All variables are centered.
+
+```{r}
+d %>%
+  summarise_each(
+    funs(mean, sd)
+  ) %>%
+  gather(what, value) %>%
+  separate(what, c("Variable", "f")) %>%
+  spread(f, value)
+```
+
+
+
+Variables are correlated, which can be assessed with a correlation matrix:
+
+```{r}
+d %>% cor() %>% kable()
+```
+
+... or a matrix of scatterplots:
+
+```{r}
+pairs(d)
+```
+
+
+
+## Efekt
+
+Chcemy poznać *efekt* zmiennej $X_1$ na zmienną $Y$.
+
+> Przez **efekt** zmiennej $X$ na zmienną $Y$ rozumiemy oczekiwaną różnicę w wartościach $Y$ odpowiadającą różnicy w $X$ równej 1.
+
+Inne sformułowania znaczące przeważnie to [prawie] samo:
+
+1. "Oczekiwana zmiana wartości $Y$ gdy wartość $X$ wzrośnie o 1". 
+    Sugeruje również, co nie zawsze jest zgodne z rzeczywistością, że zmiana $Y$ jest *wywołana* zmianą $X$, która z kolei jest efektem jakiejś interwencji (np. eksperymentalnej). 
+    
+    
+# Analizy
+
+
+Efekt x1 na y
+
+```{r}
+summary(lm( y ~ x1, data=d))
+```
+
+
+```{r}
+summary( lm( y ~ x1 + x2 + x3 + x4, data=d))
+```
+
+
+```{r}
+m1 <- lm(y ~ x2 + x1 + x4, data=d)
+m2 <- lm( resid(m1) ~ x3, data=d)
+
+summary(m1)
+summary(m2)
+```
+
+
