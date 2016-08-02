@@ -2,37 +2,47 @@
 title: "Controlling for other variables"
 author: "Michał Bojanowski"
 date: "July 22, 2016"
+abstract: "This is a short non-technical note about what does it mean to control for other variables in statistical multivariate analysis."
 output: 
   html_document:
-    toc: yes
     number_sections: yes
+    highlight: pygments
 ---
 
 
 ---
 
-```{r setup, include=FALSE}
+```{r setup, include=FALSE, cache=FALSE}
 library(dplyr)
 library(broom)
 library(tidyr)
 library(knitr)
-library(lavaan)
-library(semPlot)
 
 knitr::opts_chunk$set(
-  echo = TRUE
+  echo = FALSE,
+  cache = TRUE
   )
 
 set.seed(0)
 ```
 
 
+Questions:
 
 - What does it mean to "control for other variables" in multivariate analysis?
-- Co oznacza stwierdzenie, że "efekt zmiennej $X$ jest, *ceteris paribus* równy $\beta_x$"?
+- What does it mean that "an effect of variable $X$ is, *ceteris paribus* equal to $\beta_x$"?
 
-Poniżej ilustracje, dla zmiennych ciągłych i dyskretnych.
 
+As the discussion is about *effects* of variables, it is necessary to state what an *effect of $X$ on $Y$* is.
+
+> **Effect** of variable $X$ on variable $Y$ is an expected difference in $Y$, say $\Delta Y$, corresponding to a difference in $X$, say $\Delta X$. In other words, the efffect is $\frac{\Delta Y}{\Delta X}$.
+
+In multiplicative or log-linear models (e.g. logistic regression, Cox regression, etc.) the effect of $X$ is usually expressed in odds-ratios. We then refer to expected multiplicative change in odds of $Y$ as a response to a change in $X$.
+
+For example:
+
+- *An effect of education (measured in years of schooling) on annual income (measured in dollars) is 1000* -- Given a pair of persons in which one person has one more year of schooling than the other, the more educated person is expected on average to have an income higher by $1000 than the other person.
+- *The [multiplicative] effect of past experience of unemployment on risk of future unemployment is 2* -- Given a pair of persons in which one person has an episode of unemployment in the past, the odds/risk for experiencing unemployment again are two-times higher for the person with the past unemployment experience.
 
 
 
@@ -54,25 +64,27 @@ mod <- "
   x2 ~~ 0*x4
   x1 ~~ 0.2*x2
 "
-d <- simulateData(mod, sample.nobs = 1000)
-fit <- sem(mod, data=d, fixed.x=FALSE)
-semPaths(fit, "path", fixedStyle = 1)
+d <- lavaan::simulateData(mod, sample.nobs = 1000) %>%
+  select(x1, x2, x3, x4, y) %>%
+  as_data_frame()
+fit <- lavaan::sem(mod, data=d, fixed.x=FALSE)
+semPlot::semPaths(fit, "est", fixedStyle = 1)
 ```
 
-- All variables cause $y$
-- Variable x2 also causes x3
-- Variables x1 and x2 might be correlated due to common causes that do not interest us
+- All x-variables cause $y$.
+- Variable x2 also causes x3.
+- Variables x1 and x2 might be correlated due to common causes that do not interest us.
 - Variable x4 is *not* correlated with x1, x2, and x3.
 
-In data this might look as a dataset with `r ncol(d)` columns for variables: 
+If we collect the data, we might endup with a dataset with `r ncol(d)` columns for variables 
 `r paste(names(d), collapse=", ")` measured on `r nrow(d)` subjects.
-Few first rows of such dataset might look like this:
+First few rows of such dataset might look like this:
 
 ```{r}
 d %>% head() %>% kable()
 ```
 
-All variables are centered.
+And the summary statistics of the variables are the following:
 
 ```{r}
 d %>%
@@ -81,7 +93,8 @@ d %>%
   ) %>%
   gather(what, value) %>%
   separate(what, c("Variable", "f")) %>%
-  spread(f, value)
+  spread(f, value) %>%
+  kable()
 ```
 
 
@@ -99,37 +112,85 @@ pairs(d)
 ```
 
 
-
-## Efekt
-
-Chcemy poznać *efekt* zmiennej $X_1$ na zmienną $Y$.
-
-> Przez **efekt** zmiennej $X$ na zmienną $Y$ rozumiemy oczekiwaną różnicę w wartościach $Y$ odpowiadającą różnicy w $X$ równej 1.
-
-Inne sformułowania znaczące przeważnie to [prawie] samo:
-
-1. "Oczekiwana zmiana wartości $Y$ gdy wartość $X$ wzrośnie o 1". 
-    Sugeruje również, co nie zawsze jest zgodne z rzeczywistością, że zmiana $Y$ jest *wywołana* zmianą $X$, która z kolei jest efektem jakiejś interwencji (np. eksperymentalnej). 
-    
-    
-# Analizy
-
-
-Pełny model:
-
 ```{r}
-summary(m0 <- lm( y ~ x1 + x2 + x3 + x4, data=d) )
+by_cyl <- group_by(mtcars, cyl)
+do(by_cyl, head(., 2))
+
+models <- by_cyl %>% do(mod = lm(mpg ~ disp, data = .))
+models
+
+summarise(models, rsq = summary(mod)$r.squared)
+models %>% do(data.frame(coef = coef(.$mod)))
+models %>% do(data.frame(
+  var = names(coef(.$mod)),
+  coef(summary(.$mod)))
+)
+
+models <- by_cyl %>% do(
+  mod_linear = lm(mpg ~ disp, data = .),
+  mod_quad = lm(mpg ~ poly(disp, 2), data = .)
+)
+models
+compare <- models %>% do(aov = anova(.$mod_linear, .$mod_quad))
+# compare %>% summarise(p.value = aov$`Pr(>F)`)
+
 ```
 
-Efekt cząstkowy `x3` jako regresja reszt na reszty:
+
+    
+    
+# Ceteris Paribus
+
+```{r models}
+flist <- list(
+  full = f <- formula(y ~ x1 + x2 + x3 + x4),
+  ry = ry <- update(f, . ~ . - x3),
+  rx3 = update(ry, x3 ~ . ),
+  bivariate = formula( y ~ x3 )
+)
+
+modlist <- lapply(flist, lm, data=d)
+
+d %>%
+  mutate(
+    ry = resid(modlist$ry),
+    rx3 = resid(modlist$rx3)
+  ) -> d
+
+modlist$x3 <- lm(ry ~ rx3, data=d)
+```
+
+
+## The difference between marginal and partial effect
 
 ```{r}
-m1 <- lm(y ~ x2 + x1 + x4, data=d)
-m2 <- lm(x3 ~ x2 + x1 + x4, data=d)
-m3 <- lm( resid(m1) ~ resid(m2) )
+mod_full <- lm( y ~ x1 + x2 + x3 + x4, data=d)
+mod_marginal <- lm(y ~ x3, data=d)
+```
 
-summary(m1)
-summary(m2)
+
+
+
+## Partial effect as an effect in bivariate regression of residuals on residuals
+
+
+
+```{r}
+mod_full <- lm( y ~ x1 + x2 + x3 + x4, data=d)
+m1 <- update(m0, . ~ . - x3)
+m2 <- update(m1, x3 ~ .)
+
+d %>% mutate(
+  r_y = resid(m1),
+  r_x3 = resid(m2)
+) -> d
+
+m3 <- update(m0, r_y ~ r_x3)
+
+summary(m0)
+summary(m3)
+
+all.equal( coef(m0)["x3"], coef(m3)["r_x3"], check.attributes = FALSE)
 ```
 
 
