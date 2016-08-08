@@ -1,6 +1,11 @@
 library(googlesheets)
 library(dplyr)
 
+if(FALSE) {
+  # In RStudio server
+  options( httr_oob_default = TRUE )
+}
+
 gs_ls() %>%
   filter(sheet_title == "Budżet") %>%
   select(updated, sheet_key) %>%
