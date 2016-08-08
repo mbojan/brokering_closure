@@ -48,4 +48,5 @@ knitr::kable(budzet)
 W trakcie realizacji projektu koszty są:
 
 - wynagrodzeń z umów cywilno-prawnych: przeważnie na twardo przypisane do zadań
-- 
+- konferencje, książki, wynagrodzenia etatowe nie koniecznie jednoznacznie przypisane do zadań
+
