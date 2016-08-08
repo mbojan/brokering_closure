@@ -1,0 +1,51 @@
+---
+title: "Budżetowanie"
+author: "Michał Bojanowski"
+output: 
+  html_document:
+    highlight: pygments
+---
+
+```{r setup, include=FALSE, cache=FALSE}
+library(tibble)
+library(dplyr)
+
+set.seed(0)
+```
+
+Budżet wymaga:
+
+1. Harmonogram: łączne koszty zadań.
+2. Kosztorys: łączne koszty przez lata w rozbiciu na osobowe i nieosobowe.
+3. Personel: łączne koszty zatrudnienia poszczególnych osób.
+
+W utopijnym świecie każdą złotówkę w projekcie można przyporządkować wg następujących zmiennych:
+
+- `rok` projektu
+- `zadanie` projektu
+- `osoba` lub ogólnie "kontrahent" (musi obejmować nieosobowe koszty). Dzielą się na `kategoria= "osobowe"` i `kategoria="nieosobowe"`.
+- `kategoria` koszty osobowe i nieosobowe
+
+Jednocześnie, prezentacja budżetu wymaga wykazania jedynie czterech rozkładów sum brzegowych:
+
+1. Rozkładu brzegowego `zadanie`
+2. Rozkładu brzegowego `rok` x `kategoria`
+3. Rozkładu brzegowego `osoba`
+
+Przykładowy budżet jako rozkład łączny:
+
+```{r}
+budzet <- expand.grid(
+  zadanie = 1:3,
+  osoba = letters[1:3],
+  rok = 2000:2001,
+  stringsAsFactors = FALSE
+) %>% as_data_frame()
+budzet$kwota <- rnorm(nrow(budzet), 10000, 2000)
+knitr::kable(budzet)
+```
+
+W trakcie realizacji projektu koszty są:
+
+- wynagrodzeń z umów cywilno-prawnych: przeważnie na twardo przypisane do zadań
+- 
