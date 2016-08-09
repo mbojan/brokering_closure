@@ -88,3 +88,51 @@ pop %>%
   )
 ```
 
+
+```{r mouter}
+mouter <- function(..., retval=c("df", "array"), freq_var="n") {
+  retval <- match.arg(retval)
+  args <- list(...)
+  
+  # Sanity checks
+  is_atom <- sapply(args, is.atomic)
+  if(any(!is_atom))
+    stop("elements ", paste(which(!is_atom), collapse=", "), " are not atomic")
+  is_num <- sapply(args, is.numeric)
+  if(any(!is_num))
+    stop("elements ", paste(which(!is_num), collapse=", "), " are not numeric")
+  
+  # Reduce!
+  rval <- Reduce(outer, args)
+  
+  # Fix variable names
+  var_names <- function(l) {
+    lapply( seq(along=l), function(i) {
+      d <- dim(l[[i]])
+      if(length(d) > 1) return(names(dimnames(l[[i]])))
+      else return(names(l[i]))
+    } )
+  }
+  names(dimnames(rval)) <- unlist(var_names(args))
+
+  # Return
+  if(retval == "df") {
+    rval <- as.data.frame(as.table(rval), stringsAsFactors=FALSE)
+    names(rval)[length(rval)] <- freq_var
+  }
+  return(rval)
+}
+
+
+
+x <- mouter(
+  A = c(a=1, b=2) / 3,
+  M = matrix(1:4 / 10, 2, 2, dimnames=list(D=letters[5:6], E=letters[7:8])),
+  B = c(c=2, d=3) / 5,
+  retval="a"
+) * 1000
+
+as.table(x) %>%
+  as_data_frame()
+```
+
