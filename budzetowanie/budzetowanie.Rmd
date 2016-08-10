@@ -9,6 +9,7 @@ output:
 ```{r setup, include=FALSE, cache=FALSE}
 library(tibble)
 library(dplyr)
+library(mouter)
 
 set.seed(0)
 ```
@@ -48,28 +49,28 @@ W trakcie realizacji projektu koszty są:
 
 ```{r}
 d <- expand.grid(
-  r=0:1,
-  k=0:1,
+  r=1:2,
+  k=1:2,
   stringsAsFactors = FALSE
 )
 d$n <- c(20,10,15,30)
 
-margins <- list(
-  r = c('0'=35, '1'=40),
-  k = c('0'=30, '1'=45)
-)
-margins <- lapply(margins, function(x) x / 75 )
-
-pop <- with(margins, outer(r, k)) %>%
-  as.table() %>%
-  as_data_frame() %>%
-  rename(r=Var1, k=Var2, p=n) %>%
+pop <- mouter(
+  r = c('1'=0.6, '2'=0.4),
+  k = c('1'=0.5, '2'=0.5),
+  retval = "df",
+  freq_var = "P"
+) %>%
   mutate(
-    r = as.numeric(r),
-    k = as.numeric(k),
-    N = p * 75
-    ) %>%
-  left_join(d)
+    r=as.numeric(r),
+    k=as.numeric(k),
+    N = P * 100
+  ) %>%
+  left_join(d) %>%
+  mutate(
+    r1k1 = r==1 & k==1
+  )
+
 
 
 mod <- glm(N ~ r + k, offset=log(n), data=pop, family=poisson("log"))
@@ -86,53 +87,5 @@ pop %>%
   summarise_each(
     funs(sum), N, n, fitted
   )
-```
-
-
-```{r mouter}
-mouter <- function(..., retval=c("df", "array"), freq_var="n") {
-  retval <- match.arg(retval)
-  args <- list(...)
-  
-  # Sanity checks
-  is_atom <- sapply(args, is.atomic)
-  if(any(!is_atom))
-    stop("elements ", paste(which(!is_atom), collapse=", "), " are not atomic")
-  is_num <- sapply(args, is.numeric)
-  if(any(!is_num))
-    stop("elements ", paste(which(!is_num), collapse=", "), " are not numeric")
-  
-  # Reduce!
-  rval <- Reduce(outer, args)
-  
-  # Fix variable names
-  var_names <- function(l) {
-    lapply( seq(along=l), function(i) {
-      d <- dim(l[[i]])
-      if(length(d) > 1) return(names(dimnames(l[[i]])))
-      else return(names(l[i]))
-    } )
-  }
-  names(dimnames(rval)) <- unlist(var_names(args))
-
-  # Return
-  if(retval == "df") {
-    rval <- as.data.frame(as.table(rval), stringsAsFactors=FALSE)
-    names(rval)[length(rval)] <- freq_var
-  }
-  return(rval)
-}
-
-
-
-x <- mouter(
-  A = c(a=1, b=2) / 3,
-  M = matrix(1:4 / 10, 2, 2, dimnames=list(D=letters[5:6], E=letters[7:8])),
-  B = c(c=2, d=3) / 5,
-  retval="a"
-) * 1000
-
-as.table(x) %>%
-  as_data_frame()
 ```
 
