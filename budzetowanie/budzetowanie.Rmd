@@ -89,3 +89,52 @@ pop %>%
   )
 ```
 
+
+
+
+
+
+
+
+
+
+
+
+```{r eval=FALSE}
+# Fitting log-linear models with offset and structural zeros
+
+d <- expand.grid(
+  r = factor(1:3),
+  k = factor(1:2)
+)
+d$n <- c(10, 20, 30, 10, 50, 10)
+d$fixed <- c(0, 1, 0, 0, 1, 0)
+d$ff <- factor(replace(d$fixed, which(d$fixed == 1), seq(along=which(d$fixed == 1))))
+
+# unconstrained
+m0 <- glm( n ~ r + k, data=d, family=poisson("log"))
+d$p0 <- predict(m0, type="response")
+
+# fixing cell values
+m1 <- update(m0, . ~ . + ff)
+d$p1 <- predict(m1, type="response")
+
+# desired marginals
+d$margins <- rep(100, nrow(d))
+m2 <- glm( margins ~ r + k + offset(log(n)), data=d)
+d$p2 <- predict(m2, type="response")
+
+d %>% 
+  dplyr::select(n, p0, p1, margins, p2) %>%
+  summarise_each( funs(sum))
+d %>% 
+  group_by(r) %>%
+  dplyr::select(n, p0, p1, margins, p2) %>%
+  summarise_each( funs(sum))
+d %>% 
+  group_by(k) %>%
+  dplyr::select(n, p0, p1, margins, p2) %>%
+  summarise_each( funs(sum))
+```
+
+
