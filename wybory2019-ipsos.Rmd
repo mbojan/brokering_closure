@@ -1,0 +1,123 @@
+---
+title: "Wybory 2019 - IPSOS"
+author: "@mbojan"
+editor_options: 
+  chunk_output_type: console
+---
+
+
+```{r setup}
+library(tidyverse)
+library(rvest)
+
+options(
+  tibble.print_min = Inf
+)
+```
+
+
+# Dane
+
+## Wybory 2019
+
+
+Dane IPSOSa dla TVN24:
+
+```{r download-ipsos}
+# d <- jsonlite::fromJSON("~/Downloads/ipsos_results.json") %>%
+wybory2019 <- jsonlite::fromJSON("https://wybory.online.tvwisla.com.pl/uploads/ipsos_results.json") %>%
+  unlist() %>%
+  enframe() %>%
+  mutate(
+    l = strsplit(name, "\\."),
+    depth = map_int(l, length),
+    what = map_chr(l, 1),
+    path = map(l, head, -1),
+    partia = map_chr(l, tail, 1)
+  )
+```
+
+Ile czego:
+
+```{r}
+wybory2019 %>%
+  distinct(what, depth) %>%
+  knitr::kable()
+```
+
+
+## Sejm 2015
+
+Wyniki wyborów parlamentarnych 2015^[Źródło: https://parlament2015.pkw.gov.pl/349_Wyniki_Sejm.html]
+
+```{r wybory2015}
+r <- xml2::read_html(
+  "https://parlament2015.pkw.gov.pl/349_Wyniki_Sejm.html"
+)
+
+sejm2015 <- rvest::html_table(r, fill=TRUE)[[1]] %>%
+  as_tibble(.name_repair = "unique") %>%
+  filter(!is.na(Procent)) %>%
+  select(-starts_with("...")) %>%
+  mutate_at(
+    c("Zdobyte głosy", "Procent"),
+    ~ as.numeric(gsub("[^0-9.]", "", .))
+  ) %>%
+  mutate(
+    komitet2019 = recode(
+      `Nazwa komitetu`,
+      "Komitet Wyborczy Prawo i Sprawiedliwość" = "PiS",
+      "Komitet Wyborczy Platforma Obywatelska RP" = "PO",
+      "Komitet Wyborczy Wyborców \"Kukiz'15\"" = "Kukiz",
+      "Komitet Wyborczy Nowoczesna Ryszarda Petru" = "Nowoczesna",
+      "Koalicyjny Komitet Wyborczy Zjednoczona Lewica SLD+TR+PPS+UP+Zieloni" = "Lewica",
+      "Komitet Wyborczy Polskie Stronnictwo Ludowe" = "PSL",
+      "Komitet Wyborczy KORWiN" = "Korwin",
+      "Komitet Wyborczy Partia Razem" = "Razem",
+      .default = "Inne partie i ugrupowania"
+    )
+  )
+
+
+distinct(sejm2015, `Nazwa komitetu`)
+```
+
+
+
+
+
+
+
+# Przepływy: Sejm
+
+```{r flows-sejm}
+flows2019 <- wybory2019 %>%
+  filter(what == "SEJM_2015_row") %>%
+  transmute(
+    w2015 = map_chr(path, 2),
+    w2019 = partia,
+    pct = value
+  ) %>%
+    left_join(
+    sejm2015 %>%
+      group_by(komitet2019) %>%
+      summarise(glosy2015 = sum(`Zdobyte głosy`)),
+    by=c("w2015"="komitet2019")
+  ) %>%
+  filter(!is.na(glosy2015)) %>%
+  mutate(
+    glosy = pct / 100 * glosy2015
+  )
+```
+
+```{r flows-sejm-alluvial}
+with(
+  flows2019,
+  alluvial::alluvial(
+    select(flows2019, w2015, w2019),
+    freq = glosy,
+    col = match(w2019, unique(w2019))
+  )
+)
+```
+
