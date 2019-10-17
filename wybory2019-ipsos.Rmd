@@ -85,6 +85,37 @@ distinct(sejm2015, `Nazwa komitetu`)
 
 
 
+# Joint probability of 2015 x 2019
+
+```{r}
+drow <- wybory2019 %>%
+  filter(what == "SEJM_2015_row") %>%
+  transmute(
+    w2015 = map_chr(path, 2),
+    w2019 = partia,
+    pct = value
+  )
+
+tab <- with(drow, tapply(pct, list(w2015, w2019), identity))
+rowSums(tab)
+
+dcol <- wybory2019 %>%
+  filter(what == "SEJM_2015_col") %>%
+  transmute(
+    w2015 = map_chr(path, 2),
+    w2019 = partia,
+    pct = value
+  ) %>%
+  arrange(w2019, w2015)
+tab2 <- with(dcol, tapply(pct, list(w2015, w2019), identity))
+colSums(tab2)
+```
+
+
+
+
+
+
 
 
 
