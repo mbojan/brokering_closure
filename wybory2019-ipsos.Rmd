@@ -96,7 +96,7 @@ drow <- wybory2019 %>%
     pct = value
   )
 
-tab <- with(drow, tapply(pct, list(w2015, w2019), identity))
+tab <- with(drow, tapply(pct, list(w2015, w2019), identity)) / 100
 rowSums(tab)
 
 dcol <- wybory2019 %>%
@@ -107,10 +107,61 @@ dcol <- wybory2019 %>%
     pct = value
   ) %>%
   arrange(w2019, w2015)
-tab2 <- with(dcol, tapply(pct, list(w2015, w2019), identity))
+tab2 <- with(dcol, tapply(pct, list(w2015, w2019), identity)) / 100
 colSums(tab2)
+
+# P(a|b)
+# P(2019 | 2015)
+pab <- tab / 100
+
+# P(b|a0)
+# P(2015 | 2019 = PIS)
+pba0 <- tab2[,"PIS"] / 100
+sum(pba0)
+
+# P(a0|b)
+# P(2019=PiS | 2015)
+pa0b <- tab[,"PIS"] / 100
+
+r <- pab * pba0 / pa0b
+r <- r / sum(r)
+
+jointp <- function(tab1, tab2, a0) {
+  # P(a|b)
+  # P(2019 | 2015)
+  pab <- tab1 / 100
+  
+  # P(b|a0)
+  # P(2015 | 2019 = PIS)
+  pba0 <- tab2[,a0] / 100
+  sum(pba0)
+  
+  # P(a0|b)
+  # P(2019=PiS | 2015)
+  pa0b <- tab1[,a0] / 100
+  r <- pab * pba0 / pa0b
+  r / sum(r)
+}
+
+l <- lapply(
+  colnames(tab1), 
+  function(n) {
+    jointp(tab1, tab2, n)
+  }
+)
+
+lapply(l, function(x) x / sum(x)) %>%
+  lapply(as.vector) %>%
+  bind_cols() %>%
+  as.data.frame() -> d
+cor(d)
+plot(d)
 ```
 
+```{r}
+p1 <- tab2 %*% t(tab)
+colSums(p1)
+```
 
 
 
