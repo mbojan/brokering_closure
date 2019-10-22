@@ -77,17 +77,81 @@ sejm2015 <- rvest::html_table(r, fill=TRUE)[[1]] %>%
       .default = "Inne partie i ugrupowania"
     )
   )
-
-
-distinct(sejm2015, `Nazwa komitetu`)
 ```
 
 
+## Sejm 2019
+
+
+```{r}
+txt <- "Komitet	Liczba głosów	Procent głosów	Liczba mandatów	Procent mandatów
+KOMITET WYBORCZY PRAWO I SPRAWIEDLIWOŚĆ	8 051 935	
+43,59%
+	235	
+51,09%
+KOALICYJNY KOMITET WYBORCZY KOALICJA OBYWATELSKA PO .N IPL ZIELONI	5 060 355	
+27,40%
+	134	
+29,13%
+KOMITET WYBORCZY SOJUSZ LEWICY DEMOKRATYCZNEJ	2 319 946	
+12,56%
+	49	
+10,65%
+KOMITET WYBORCZY POLSKIE STRONNICTWO LUDOWE	1 578 523	
+8,55%
+	30	
+6,52%
+KOMITET WYBORCZY KONFEDERACJA WOLNOŚĆ I NIEPODLEGŁOŚĆ	1 256 953	
+6,81%
+	11	
+2,39%
+KOMITET WYBORCZY WYBORCÓW KOALICJA BEZPARTYJNI I SAMORZĄDOWCY	144 773	
+0,78%
+	0	
+0,00%
+KOMITET WYBORCZY WYBORCÓW MNIEJSZOŚĆ NIEMIECKA	32 094	
+0,17%
+	1	
+0,22%
+KOMITET WYBORCZY SKUTECZNI PIOTRA LIROYA-MARCA	18 918	
+0,10%
+	0	
+0,00%
+KOMITET WYBORCZY AKCJA ZAWIEDZIONYCH EMERYTÓW RENCISTÓW	5 448	
+0,03%
+	0	
+0,00%
+KOMITET WYBORCZY PRAWICA	1 765	
+0,01%
+	0	
+0,00%"
+
+w2019 <- textConnection(txt) %>%
+  readLines() %>%
+  strsplit("\t") %>%
+  unlist() %>%
+  "["(-which(. == "")) %>%
+  matrix(ncol=5, byrow=TRUE)
+nams <- w2019[1,]
+
+sejm2019 <- w2019[-1,] %>%
+  as_tibble() %>%
+  set_names(nams) %>%
+  mutate_at(
+    - 1,
+    ~ gsub(",", ".", .x) %>%
+      gsub("[^0-9.]", "", .) %>%
+      as.numeric()
+  )
+```
 
 
 # Joint probability of 2015 x 2019
 
+Extract the conditional distributions of voting:
+
 ```{r}
+# Row pct: P(2019 | 2015)
 drow <- wybory2019 %>%
   filter(what == "SEJM_2015_row") %>%
   transmute(
@@ -96,9 +160,16 @@ drow <- wybory2019 %>%
     pct = value
   )
 
-tab <- with(drow, tapply(pct, list(w2015, w2019), identity)) / 100
-rowSums(tab)
+rowtab <- with(drow, tapply(pct, list(w2015, w2019), identity)) / 100
 
+stopifnot(isTRUE(all.equal(
+  rowSums(rowtab),
+  rep(1, nrow(rowtab)),
+  check.attributes = FALSE
+)))
+  
+
+# Col pct: P(2015 | 2019)
 dcol <- wybory2019 %>%
   filter(what == "SEJM_2015_col") %>%
   transmute(
@@ -107,61 +178,56 @@ dcol <- wybory2019 %>%
     pct = value
   ) %>%
   arrange(w2019, w2015)
-tab2 <- with(dcol, tapply(pct, list(w2015, w2019), identity)) / 100
-colSums(tab2)
 
-# P(a|b)
-# P(2019 | 2015)
-pab <- tab / 100
+coltab <- with(dcol, tapply(pct, list(w2015, w2019), identity)) / 100
 
-# P(b|a0)
-# P(2015 | 2019 = PIS)
-pba0 <- tab2[,"PIS"] / 100
-sum(pba0)
+stopifnot(isTRUE(all.equal(
+  colSums(coltab),
+  rep(1, ncol(coltab)),
+  check.attributes = FALSE
+)))
+```
 
-# P(a0|b)
-# P(2019=PiS | 2015)
-pa0b <- tab[,"PIS"] / 100
+Computing steady states of the Markov Chains:
 
-r <- pab * pba0 / pa0b
-r <- r / sum(r)
+```{r}
+p1 <- t(coltab) %*% rowtab
+mc1 <- new("markovchain", transitionMatrix = p1)
+mcss1 <- steadyStates(mc1)
 
-jointp <- function(tab1, tab2, a0) {
-  # P(a|b)
-  # P(2019 | 2015)
-  pab <- tab1 / 100
-  
-  # P(b|a0)
-  # P(2015 | 2019 = PIS)
-  pba0 <- tab2[,a0] / 100
-  sum(pba0)
-  
-  # P(a0|b)
-  # P(2019=PiS | 2015)
-  pa0b <- tab1[,a0] / 100
-  r <- pab * pba0 / pa0b
-  r / sum(r)
-}
+p2 <- rowtab %*% t(coltab)
+mc2 <- new("markovchain", transitionMatrix = p2)
+mcss2 <- steadyStates(mc2)
+```
 
-l <- lapply(
-  colnames(tab1), 
-  function(n) {
-    jointp(tab1, tab2, n)
-  }
-)
+Checking compatibility
 
-lapply(l, function(x) x / sum(x)) %>%
-  lapply(as.vector) %>%
-  bind_cols() %>%
-  as.data.frame() -> d
-cor(d)
-plot(d)
+```{r}
+m1 <- sweep(rowtab, 1, mcss2, "*")
+m2 <- sweep(coltab, 2, mcss1, "*")
+all.equal(m1, m2)
 ```
 
 ```{r}
-p1 <- tab2 %*% t(tab)
-colSums(p1)
+hist(abs(m1 - m2))
 ```
+
+Not exactly compatible.
+
+
+Let's proceed with `m1`.
+
+```{r}
+m1 %>%
+  as.table() %>%
+  as.data.frame(stringsAsFactors=FALSE) %>%
+  as_tibble() %>%
+  mutate(n = Freq * 60000) # get counts
+```
+
+
+
+
 
 
 
